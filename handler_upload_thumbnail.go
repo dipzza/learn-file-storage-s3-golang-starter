@@ -1,10 +1,12 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -41,16 +43,9 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	file, fileHeader, err := r.FormFile("thumbnail")
+	formFile, formFileHeader, err := r.FormFile("thumbnail")
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Couldn't parse multipart form", err)
-		return
-	}
-
-	contentType := fileHeader.Header.Get("Content-Type")
-	thumbnailData, err := io.ReadAll(file)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't read file", err)
 		return
 	}
 
@@ -64,10 +59,35 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	thumbnailAsText :=base64.StdEncoding.EncodeToString(thumbnailData)
-	dataURL := fmt.Sprintf("data:%s;base64,%s", contentType, thumbnailAsText)
-	video.ThumbnailURL = &dataURL
-	
+	contentType := formFileHeader.Header.Get("Content-Type")
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Couldn't parse media type", err)
+		return
+	}
+	if mediaType != "image/jpeg" && mediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "Unsupported file type", err)
+		return
+	}
+
+	extension := getExtension(mediaType)
+	newfilePath := filepath.Join(cfg.assetsRoot, videoIDString + "." + extension)
+	file, err := os.Create(newfilePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create file", err)
+		return
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, formFile)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't copy file", err)
+		return
+	}
+
+	thumbnailURL := fmt.Sprintf("http://localhost:%s/assets/%s.%s", cfg.port, videoIDString, extension)
+	video.ThumbnailURL = &thumbnailURL
+
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't update video", err)
@@ -75,4 +95,19 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 
 	respondWithJSON(w, http.StatusOK, video)
+}
+
+func getExtension(contentType string) string {
+	switch contentType {
+	case "image/jpeg":
+			return "jpg"
+	case "image/png":
+			return "png"
+	case "image/gif":
+			return "gif"
+	case "image/webp":
+			return "webp"
+	default:
+			return "bin"
+	}
 }
