@@ -37,7 +37,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
-	// TODO: implement the upload here
 	const maxUploadSize = 10 << 20
 	err = r.ParseMultipartForm(maxUploadSize)
 	if err != nil {
@@ -50,6 +49,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusBadRequest, "Couldn't parse multipart form", err)
 		return
 	}
+	defer formFile.Close()
 
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
@@ -112,6 +112,8 @@ func getExtension(contentType string) string {
 			return "gif"
 	case "image/webp":
 			return "webp"
+	case "video/mp4":
+			return "mp4"
 	default:
 			return "bin"
 	}
